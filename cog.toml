@@ -1,0 +1,11 @@
+[changelog]
+path = "CHANGELOG.md"
+template = "remote"
+remote = "github.com"
+# Replace with your GitHub username and repo name:
+repository = "mangatool"
+owner = "your-github-username"
+
+[changelog.authors]
+# Map commit signature names to GitHub usernames for linked credits:
+# signature = "github-username"
