@@ -140,3 +140,11 @@ func (l *Library) HasChapter(chapterID string) (bool, error) {
 	var count int
 	return count > 0, row.Scan(&count)
 }
+
+func (l *Library) RemoveManga(mangaID string) error {
+	if _, err := l.db.Exec(`DELETE FROM chapters WHERE manga_id = ?`, mangaID); err != nil {
+		return err
+	}
+	_, err := l.db.Exec(`DELETE FROM manga WHERE id = ?`, mangaID)
+	return err
+}
