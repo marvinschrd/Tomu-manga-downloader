@@ -28,7 +28,8 @@ go.work.sum
 .env
 
 # Build output
-mangatool
+tomu
+tomu.exe
 
 # Editor/IDE
 # .idea/

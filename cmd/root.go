@@ -8,8 +8,8 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mangatool",
-	Short: "Browse and download manga",
+	Use:   "tomu",
+	Short: "Manga Downloader",
 }
 
 func Execute() {
