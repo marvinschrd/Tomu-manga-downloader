@@ -3,6 +3,8 @@ package library
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"mangatool/core"
@@ -14,6 +16,11 @@ type Library struct {
 }
 
 func Open(path string) (*Library, error) {
+	if path != ":memory:" {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return nil, err
+		}
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
