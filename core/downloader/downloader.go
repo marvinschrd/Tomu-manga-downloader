@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
+	"time"
 )
 
 // CreateCBZ zips the given image files (in order) and a ComicInfo.xml into a CBZ file.
@@ -108,26 +110,50 @@ func DownloadImages(urls []string, destDir string) ([]string, error) {
 	return paths, nil
 }
 
-func downloadImage(url, destDir, name string) (string, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
+const maxImageRetries = 4
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
-	}
+func downloadImage(rawURL, destDir, name string) (string, error) {
+	delay := time.Second
+	for attempt := 0; attempt < maxImageRetries; attempt++ {
+		resp, err := http.Get(rawURL)
+		if err != nil {
+			return "", err
+		}
 
-	path := filepath.Join(destDir, name)
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			wait := imageRetryAfter(resp.Header.Get("Retry-After"), delay)
+			resp.Body.Close()
+			if attempt == maxImageRetries-1 {
+				return "", fmt.Errorf("rate limited downloading image — giving up after %d retries", maxImageRetries)
+			}
+			time.Sleep(wait)
+			delay *= 2
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, rawURL)
+		}
 
-	_, err = io.Copy(f, resp.Body)
-	return path, err
+		path := filepath.Join(destDir, name)
+		f, err := os.Create(path)
+		if err != nil {
+			resp.Body.Close()
+			return "", err
+		}
+		_, copyErr := io.Copy(f, resp.Body)
+		f.Close()
+		resp.Body.Close()
+		return path, copyErr
+	}
+	return "", fmt.Errorf("rate limited downloading image — giving up")
+}
+
+func imageRetryAfter(header string, fallback time.Duration) time.Duration {
+	if secs, err := strconv.Atoi(header); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return fallback
 }
 
 func imageExt(url string) string {

@@ -42,6 +42,7 @@ type chapterAttributes struct {
 	Chapter            string `json:"chapter"`
 	TranslatedLanguage string `json:"translatedLanguage"`
 	Pages              int    `json:"pages"`
+	ExternalUrl        string `json:"externalUrl"` // non-empty = official publisher chapter, no images on MangaDex
 }
 
 type atHomeResponse struct {

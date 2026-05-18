@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"time"
 )
+
+const maxRetries = 4
 
 // Client is a generic JSON HTTP client shared by all source implementations.
 type Client struct {
@@ -38,31 +42,53 @@ func (c *Client) WithHeader(key, value string) *Client {
 }
 
 // Get performs a GET request and decodes the JSON response into out.
+// Retries up to maxRetries times on HTTP 429, honouring Retry-After when present.
 func (c *Client) Get(path string, params url.Values, out interface{}) error {
 	u := c.baseURL + path
 	if len(params) > 0 {
 		u += "?" + params.Encode()
 	}
 
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	if err != nil {
+	delay := time.Second
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		req, err := http.NewRequest(http.MethodGet, u, nil)
+		if err != nil {
+			return err
+		}
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			wait := parseRetryAfter(resp.Header.Get("Retry-After"), delay)
+			resp.Body.Close()
+			if attempt == maxRetries-1 {
+				return fmt.Errorf("rate limited by %s — giving up after %d retries", c.baseURL, maxRetries)
+			}
+			fmt.Printf("  rate limited — retrying in %v...\n", wait.Round(time.Second))
+			time.Sleep(wait)
+			delay *= 2
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("HTTP %d from %s%s", resp.StatusCode, c.baseURL, path)
+		}
+		err = json.NewDecoder(resp.Body).Decode(out)
+		resp.Body.Close()
 		return err
 	}
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
-	}
+	return fmt.Errorf("rate limited by %s — giving up", c.baseURL)
+}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
+func parseRetryAfter(header string, fallback time.Duration) time.Duration {
+	if secs, err := strconv.Atoi(header); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return fmt.Errorf("rate limited by %s — try again later", c.baseURL)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d from %s%s", resp.StatusCode, c.baseURL, path)
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return fallback
 }

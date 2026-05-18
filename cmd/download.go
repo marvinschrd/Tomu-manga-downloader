@@ -37,16 +37,32 @@ var downloadCmd = &cobra.Command{
 			return err
 		}
 
-		chapters, err := source.GetChapters(mangaID, core.ChapterOptions{Language: lang})
+		allChapters, err := source.GetChapters(mangaID, core.ChapterOptions{Language: lang})
 		if err != nil {
 			return err
 		}
 
+		chapters := allChapters
 		if chapterRange != "" {
-			chapters, err = filterChapterRange(chapters, chapterRange)
+			chapters, err = filterChapterRange(allChapters, chapterRange)
 			if err != nil {
 				return err
 			}
+		}
+
+		if len(chapters) == 0 {
+			if len(allChapters) == 0 {
+				fmt.Printf("No downloadable chapters found for %q in language %q.\n", manga.Title, lang)
+				fmt.Println("Note: official publisher chapters (e.g. Viz, Shonen Jump) are hosted externally and cannot be downloaded.")
+			} else {
+				fmt.Printf("No chapters matched range %q. Available: Ch.%.4g – Ch.%.4g (%d total)\n",
+					chapterRange,
+					allChapters[0].Number,
+					allChapters[len(allChapters)-1].Number,
+					len(allChapters),
+				)
+			}
+			return nil
 		}
 
 		lib, err := library.Open(libraryPath())
@@ -83,7 +99,13 @@ var downloadCmd = &cobra.Command{
 			imageURLs, err := source.DownloadChapter(ch, tmpDir)
 			if err != nil {
 				os.RemoveAll(tmpDir)
-				return fmt.Errorf("Ch.%v: %w", ch.Number, err)
+				fmt.Printf("  skip Ch.%v (not available for download: %v)\n", ch.Number, err)
+				continue
+			}
+			if len(imageURLs) == 0 {
+				os.RemoveAll(tmpDir)
+				fmt.Printf("  skip Ch.%v (no images — hosted on external publisher site)\n", ch.Number)
+				continue
 			}
 
 			imagePaths, err := downloader.DownloadImages(imageURLs, tmpDir)
