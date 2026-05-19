@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"mangatool/config"
 	"mangatool/core"
@@ -15,6 +17,14 @@ import (
 	"mangatool/core/library"
 	"mangatool/core/metadata"
 	"mangatool/core/sources/mangadex"
+)
+
+var (
+	green  = color.New(color.FgGreen).SprintFunc()
+	yellow = color.New(color.FgYellow).SprintFunc()
+	red    = color.New(color.FgRed).SprintFunc()
+	bold   = color.New(color.Bold).SprintFunc()
+	dim    = color.New(color.Faint).SprintFunc()
 )
 
 var downloadCmd = &cobra.Command{
@@ -32,12 +42,22 @@ var downloadCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 
 		source := mangadex.New()
+
+		spinner := progressbar.NewOptions(-1,
+			progressbar.OptionSetDescription("  Fetching manga info..."),
+			progressbar.OptionSpinnerType(14),
+			progressbar.OptionClearOnFinish(),
+			progressbar.OptionSetWriter(os.Stderr),
+		)
+		spinner.Add(1)
+
 		manga, err := source.GetManga(mangaID)
 		if err != nil {
+			spinner.Clear()
 			return err
 		}
-
 		allChapters, err := source.GetChapters(mangaID, core.ChapterOptions{Language: lang})
+		spinner.Clear()
 		if err != nil {
 			return err
 		}
@@ -52,11 +72,11 @@ var downloadCmd = &cobra.Command{
 
 		if len(chapters) == 0 {
 			if len(allChapters) == 0 {
-				fmt.Printf("No downloadable chapters found for %q in language %q.\n", manga.Title, lang)
-				fmt.Println("Note: official publisher chapters (e.g. Viz, Shonen Jump) are hosted externally and cannot be downloaded.")
+				fmt.Printf("  %s  No downloadable chapters found for %q in language %q.\n", yellow("ℹ"), manga.Title, lang)
+				fmt.Printf("  %s  Official publisher chapters (Viz, Shonen Jump…) are hosted externally.\n", dim("↳"))
 			} else {
-				fmt.Printf("No chapters matched range %q. Available: Ch.%.4g – Ch.%.4g (%d total)\n",
-					chapterRange,
+				fmt.Printf("  %s  No chapters matched range %q. Available: Ch.%.4g – Ch.%.4g (%d total)\n",
+					yellow("ℹ"), chapterRange,
 					allChapters[0].Number,
 					allChapters[len(allChapters)-1].Number,
 					len(allChapters),
@@ -64,6 +84,8 @@ var downloadCmd = &cobra.Command{
 			}
 			return nil
 		}
+
+		fmt.Printf("\n%s  %s\n\n", bold("📚"), bold(fmt.Sprintf("%s  ·  %d chapters available", manga.Title, len(chapters))))
 
 		lib, err := library.Open(libraryPath())
 		if err != nil {
@@ -79,18 +101,23 @@ var downloadCmd = &cobra.Command{
 			return err
 		}
 
-		for _, ch := range chapters {
+		var downloaded, skipped int
+		total := len(chapters)
+
+		for i, ch := range chapters {
 			cbzName := chapterFilename(manga.Title, ch)
 			cbzPath := filepath.Join(mangaDir, cbzName)
+			counter := dim(fmt.Sprintf("[%d/%d]", i+1, total))
 
 			if !force {
 				if exists, _ := lib.HasChapter(ch.ID); exists {
-					fmt.Printf("  skip Ch.%v (already downloaded — use --force to re-download)\n", ch.Number)
+					fmt.Printf("  %s %s  %s\n", yellow("⏭"), counter, dim(fmt.Sprintf("Ch.%v — already downloaded", ch.Number)))
+					skipped++
 					continue
 				}
 			}
 
-			fmt.Printf("  downloading Ch.%v...\n", ch.Number)
+			fmt.Printf("  %s %s  Ch.%v\n", "📥", counter, ch.Number)
 			tmpDir, err := os.MkdirTemp("", "mangatool-*")
 			if err != nil {
 				return err
@@ -99,27 +126,38 @@ var downloadCmd = &cobra.Command{
 			imageURLs, err := source.DownloadChapter(ch, tmpDir)
 			if err != nil {
 				os.RemoveAll(tmpDir)
-				fmt.Printf("  skip Ch.%v (not available for download: %v)\n", ch.Number, err)
+				fmt.Printf("  %s %s  Ch.%v — %s\n", red("⚠"), counter, ch.Number, dim(err.Error()))
+				skipped++
 				continue
 			}
 			if len(imageURLs) == 0 {
 				os.RemoveAll(tmpDir)
-				fmt.Printf("  skip Ch.%v (no images — hosted on external publisher site)\n", ch.Number)
+				fmt.Printf("  %s %s  Ch.%v — %s\n", yellow("⏭"), counter, ch.Number, dim("hosted on official publisher site"))
+				skipped++
 				continue
 			}
 
-			imagePaths, err := downloader.DownloadImages(imageURLs, tmpDir)
+			bar := progressbar.NewOptions(len(imageURLs),
+				progressbar.OptionSetWidth(30),
+				progressbar.OptionSetDescription(fmt.Sprintf("      %s", dim("downloading pages"))),
+				progressbar.OptionClearOnFinish(),
+				progressbar.OptionSetWriter(os.Stderr),
+				progressbar.OptionShowCount(),
+			)
+
+			imagePaths, err := downloader.DownloadImages(imageURLs, tmpDir, func() { bar.Add(1) })
 			if err != nil {
+				bar.Clear()
 				os.RemoveAll(tmpDir)
 				return fmt.Errorf("Ch.%v images: %w", ch.Number, err)
 			}
+			bar.Clear()
 
 			ci, err := metadata.GenerateComicInfo(manga, ch, len(imagePaths))
 			if err != nil {
 				os.RemoveAll(tmpDir)
 				return err
 			}
-
 			if err := downloader.CreateCBZ(cbzPath, imagePaths, ci); err != nil {
 				os.RemoveAll(tmpDir)
 				return err
@@ -131,8 +169,18 @@ var downloadCmd = &cobra.Command{
 				CBZPath:      cbzPath,
 				DownloadedAt: time.Now(),
 			})
-			fmt.Printf("  saved %s\n", cbzName)
+
+			size := fileSize(cbzPath)
+			fmt.Printf("  %s %s  Ch.%v saved  %s\n", green("✅"), counter, ch.Number, dim("· "+size))
+			downloaded++
 		}
+
+		fmt.Printf("\n%s\n", dim(strings.Repeat("─", 45)))
+		fmt.Printf("  📦  %s downloaded  %s skipped  %s\n",
+			bold(fmt.Sprintf("%d", downloaded)),
+			dim(fmt.Sprintf("%d", skipped)),
+			dim("· "+mangaDir),
+		)
 		return nil
 	},
 }
@@ -142,6 +190,18 @@ func init() {
 	downloadCmd.Flags().StringP("chapters", "c", "", "chapter range, e.g. 1-10")
 	downloadCmd.Flags().StringP("lang", "l", "", "language (default: from config)")
 	downloadCmd.Flags().Bool("force", false, "re-download already downloaded chapters")
+}
+
+func fileSize(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	mb := float64(info.Size()) / 1024 / 1024
+	if mb < 1 {
+		return fmt.Sprintf("%.0f KB", mb*1024)
+	}
+	return fmt.Sprintf("%.1f MB", mb)
 }
 
 func filterChapterRange(chapters []core.Chapter, rangeStr string) ([]core.Chapter, error) {

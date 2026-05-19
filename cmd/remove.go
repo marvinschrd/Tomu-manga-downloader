@@ -28,16 +28,19 @@ var removeCmd = &cobra.Command{
 
 		dbOnly, _ := cmd.Flags().GetBool("db-only")
 
+		fmt.Println()
 		if dbOnly {
-			fmt.Printf("Remove %q from library (files on disk kept)? [y/N] ", m.Title)
+			fmt.Printf("  %s  Remove %s from library? Files on disk will be kept. %s ",
+				yellow("⚠"), bold(m.Title), dim("[y/N]"))
 		} else {
-			fmt.Printf("Delete %q and all files in %s? [y/N] ", m.Title, m.OutputDir)
+			fmt.Printf("  %s  Delete %s and all files in %s? %s ",
+				yellow("⚠"), bold(m.Title), dim(m.OutputDir), dim("[y/N]"))
 		}
 
 		reader := bufio.NewReader(os.Stdin)
 		answer, _ := reader.ReadString('\n')
 		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
-			fmt.Println("Cancelled.")
+			fmt.Printf("  %s  Cancelled.\n\n", dim("↩"))
 			return nil
 		}
 
@@ -45,13 +48,13 @@ var removeCmd = &cobra.Command{
 			if err := os.RemoveAll(m.OutputDir); err != nil {
 				return fmt.Errorf("deleting files: %w", err)
 			}
-			fmt.Printf("Deleted %s\n", m.OutputDir)
+			fmt.Printf("  %s  Deleted %s\n", "🗑", dim(m.OutputDir))
 		}
 
 		if err := lib.RemoveManga(m.ID); err != nil {
 			return fmt.Errorf("removing from library: %w", err)
 		}
-		fmt.Printf("Removed %q from library.\n", m.Title)
+		fmt.Printf("  %s  %s removed from library.\n\n", green("✅"), bold(m.Title))
 		return nil
 	},
 }

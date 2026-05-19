@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"mangatool/config"
@@ -27,12 +26,17 @@ var searchCmd = &cobra.Command{
 			return err
 		}
 		if len(results) == 0 {
-			fmt.Println("No results found.")
+			fmt.Printf("  %s  No results found for %q\n", yellow("🔍"), args[0])
 			return nil
 		}
+		fmt.Println()
 		for _, m := range results {
-			fmt.Fprintf(os.Stdout, "[%s] %s (%s)\n", m.ID, m.Title, m.Status)
+			fmt.Printf("  📖  %s  %s\n",
+				bold(fmt.Sprintf("[%s]", m.ID)),
+				m.Title+dim(fmt.Sprintf(" (%s)", m.Status)),
+			)
 		}
+		fmt.Println()
 		return nil
 	},
 }

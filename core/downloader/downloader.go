@@ -66,7 +66,8 @@ func addFileToZip(w *zip.Writer, srcPath, name string) error {
 
 // DownloadImages downloads image URLs in parallel into destDir.
 // Returns ordered file paths matching the order of urls.
-func DownloadImages(urls []string, destDir string) ([]string, error) {
+// onProgress is called after each successful image download; pass nil for no-op.
+func DownloadImages(urls []string, destDir string, onProgress func()) ([]string, error) {
 	type result struct {
 		idx  int
 		path string
@@ -101,6 +102,9 @@ func DownloadImages(urls []string, destDir string) ([]string, error) {
 			return nil, fmt.Errorf("downloading image %d: %w", r.idx+1, r.err)
 		}
 		results[r.idx] = r
+		if onProgress != nil {
+			onProgress()
+		}
 	}
 
 	paths := make([]string, len(urls))
