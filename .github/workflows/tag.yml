@@ -29,4 +29,4 @@ jobs:
           command: bump
           args: --auto
           git-user: github-actions[bot]
-          git-user-email: github-actions[bot]@users.noreply.github.com
+          git-user-email: 41898282+github-actions[bot]@users.noreply.github.com
