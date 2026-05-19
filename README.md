@@ -1,9 +1,9 @@
 # Tomu — Manga Downloader
 
-[![CI](https://github.com/marvinschrd/mangatool/actions/workflows/ci.yml/badge.svg)](https://github.com/marvinschrd/mangatool/actions/workflows/ci.yml)
+[![CI](https://github.com/marvinschrd/Tomu-manga-downloader/actions/workflows/ci.yml/badge.svg)](https://github.com/marvinschrd/Tomu-manga-downloader/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![Go Report Card](https://goreportcard.com/badge/github.com/marvinschrd/mangatool)](https://goreportcard.com/report/github.com/marvinschrd/mangatool)
-[![Status](https://img.shields.io/badge/status-WIP-orange)](https://github.com/marvinschrd/mangatool)
+[![Go Report Card](https://goreportcard.com/badge/github.com/marvinschrd/Tomu-manga-downloader)](https://goreportcard.com/report/github.com/marvinschrd/Tomu-manga-downloader)
+[![Status](https://img.shields.io/badge/status-WIP-orange)](https://github.com/marvinschrd/Tomu-manga-downloader)
 
 > Your manga, your library, your terminal.
 
@@ -24,7 +24,7 @@ Go, Cobra, SQLite. That's it.
 **Prerequisites:** [Go 1.21+](https://go.dev/dl/)
 
 ```bash
-git clone https://github.com/marvinschrd/mangatool
+git clone https://github.com/marvinschrd/Tomu-manga-downloader
 cd mangatool
 make build
 ```
