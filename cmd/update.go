@@ -45,13 +45,13 @@ var updateCmd = &cobra.Command{
 		for _, m := range targets {
 			maxNum, err := lib.MaxChapterNumber(m.ID)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "skipping %s: %v\n", m.Title, err)
+				fmt.Fprintf(os.Stderr, "  %s  %s — %v\n", red("⚠"), m.Title, err)
 				continue
 			}
 
 			newChapters, err := source.GetLatestChapters(m.ID, maxNum)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error checking %s: %v\n", m.Title, err)
+				fmt.Fprintf(os.Stderr, "  %s  %s — %v\n", red("⚠"), m.Title, err)
 				continue
 			}
 
@@ -63,25 +63,25 @@ var updateCmd = &cobra.Command{
 			}
 
 			if len(filtered) == 0 {
-				fmt.Printf("%s: up to date\n", m.Title)
+				fmt.Printf("  %s  %s\n", green("✅"), bold(m.Title)+dim(" — up to date"))
 				continue
 			}
-			fmt.Printf("%s: %d new chapter(s)\n", m.Title, len(filtered))
+			fmt.Printf("  %s  %s\n", "📥", bold(m.Title)+yellow(fmt.Sprintf(" — %d new chapter(s)", len(filtered))))
 
 			for _, ch := range filtered {
-				fmt.Printf("  downloading Ch.%v...\n", ch.Number)
+				fmt.Printf("    %s  Ch.%v\n", "📥", ch.Number)
 				tmpDir, _ := os.MkdirTemp("", "mangatool-*")
 
 				imageURLs, err := source.DownloadChapter(ch, tmpDir)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "  Ch.%v failed: %v\n", ch.Number, err)
+					fmt.Fprintf(os.Stderr, "    %s  Ch.%v — %v\n", red("⚠"), ch.Number, err)
 					os.RemoveAll(tmpDir)
 					continue
 				}
 
-				imagePaths, err := downloader.DownloadImages(imageURLs, tmpDir)
+				imagePaths, err := downloader.DownloadImages(imageURLs, tmpDir, nil)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "  Ch.%v images failed: %v\n", ch.Number, err)
+					fmt.Fprintf(os.Stderr, "    %s  Ch.%v images — %v\n", red("⚠"), ch.Number, err)
 					os.RemoveAll(tmpDir)
 					continue
 				}
@@ -89,7 +89,7 @@ var updateCmd = &cobra.Command{
 				ci, _ := metadata.GenerateComicInfo(m.Manga, ch, len(imagePaths))
 				cbzPath := filepath.Join(m.OutputDir, chapterFilename(m.Title, ch))
 				if err := downloader.CreateCBZ(cbzPath, imagePaths, ci); err != nil {
-					fmt.Fprintf(os.Stderr, "  Ch.%v CBZ failed: %v\n", ch.Number, err)
+					fmt.Fprintf(os.Stderr, "    %s  Ch.%v CBZ — %v\n", red("⚠"), ch.Number, err)
 					os.RemoveAll(tmpDir)
 					continue
 				}
@@ -100,7 +100,8 @@ var updateCmd = &cobra.Command{
 					CBZPath:      cbzPath,
 					DownloadedAt: time.Now(),
 				})
-				fmt.Printf("  saved Ch.%v\n", ch.Number)
+				size := fileSize(cbzPath)
+				fmt.Printf("    %s  Ch.%v saved  %s\n", green("✅"), ch.Number, dim("· "+size))
 			}
 		}
 		return nil

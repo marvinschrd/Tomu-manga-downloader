@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"mangatool/core/library"
 	"mangatool/core/merger"
@@ -66,7 +68,7 @@ var mergeCmd = &cobra.Command{
 			if err := merger.MergeCBZs(paths, outPath, ci); err != nil {
 				return err
 			}
-			fmt.Printf("Created: %s\n", outPath)
+			fmt.Printf("  %s  %s  %s\n", green("📦"), bold(name), dim("· "+outPath))
 			if removeOriginals {
 				for _, p := range paths {
 					os.Remove(p)
@@ -79,21 +81,50 @@ var mergeCmd = &cobra.Command{
 		if len(groups) == 0 {
 			return fmt.Errorf("no volume information found — use -c and -n for manual merge")
 		}
-		for vol, volChapters := range groups {
+
+		// sort volumes for deterministic order and progress bar
+		volKeys := make([]string, 0, len(groups))
+		for k := range groups {
+			volKeys = append(volKeys, k)
+		}
+		sort.Strings(volKeys)
+
+		fmt.Printf("\n  %s  %s  %s\n\n", bold("📚"), bold(m.Title), dim(fmt.Sprintf("· %d volumes", len(groups))))
+
+		bar := progressbar.NewOptions(len(groups),
+			progressbar.OptionSetWidth(30),
+			progressbar.OptionSetDescription("  Merging volumes"),
+			progressbar.OptionClearOnFinish(),
+			progressbar.OptionSetWriter(os.Stderr),
+			progressbar.OptionShowCount(),
+		)
+
+		for _, vol := range volKeys {
+			volChapters := groups[vol]
 			paths := entryCBZPaths(volChapters)
 			outPath := filepath.Join(m.OutputDir, sanitize(fmt.Sprintf("%s - Vol.%s.cbz", m.Title, vol)))
 			ci, _ := metadata.GenerateMergedComicInfo(manga, "Vol."+vol, volChapters[0].Number, volChapters[len(volChapters)-1].Number, 0)
 			if err := merger.MergeCBZs(paths, outPath, ci); err != nil {
-				fmt.Fprintf(os.Stderr, "Vol.%s failed: %v\n", vol, err)
+				bar.Clear()
+				fmt.Fprintf(os.Stderr, "  %s  Vol.%s — %v\n", red("⚠"), vol, err)
+				bar.RenderBlank()
 				continue
 			}
-			fmt.Printf("Created: %s\n", outPath)
+			bar.Add(1)
 			if removeOriginals {
 				for _, p := range paths {
 					os.Remove(p)
 				}
 			}
 		}
+		bar.Clear()
+
+		for _, vol := range volKeys {
+			outPath := filepath.Join(m.OutputDir, sanitize(fmt.Sprintf("%s - Vol.%s.cbz", m.Title, vol)))
+			size := fileSize(outPath)
+			fmt.Printf("  %s  Vol.%s  %s\n", green("📦"), vol, dim("· "+size))
+		}
+		fmt.Println()
 		return nil
 	},
 }

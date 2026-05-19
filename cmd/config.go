@@ -15,9 +15,11 @@ var configCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("output_dir:       %s\n", cfg.OutputDir)
-		fmt.Printf("default_language: %s\n", cfg.DefaultLanguage)
-		fmt.Printf("default_source:   %s\n", cfg.DefaultSource)
+		fmt.Println()
+		fmt.Printf("  %-20s %s\n", dim("output_dir"), cfg.OutputDir)
+		fmt.Printf("  %-20s %s\n", dim("default_language"), cfg.DefaultLanguage)
+		fmt.Printf("  %-20s %s\n", dim("default_source"), cfg.DefaultSource)
+		fmt.Println()
 		return nil
 	},
 }
@@ -44,7 +46,7 @@ var configSetCmd = &cobra.Command{
 		if err := config.Save(cfg); err != nil {
 			return err
 		}
-		fmt.Printf("set %s = %s\n", args[0], args[1])
+		fmt.Printf("  %s  %s = %s\n", green("✅"), bold(args[0]), args[1])
 		return nil
 	},
 }

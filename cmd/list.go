@@ -22,13 +22,18 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		if len(manga) == 0 {
-			fmt.Println("No manga in library. Use 'download' to add some.")
+			fmt.Printf("  %s  No manga in library. Use %s to add some.\n", "📭", bold("'tomu download'"))
 			return nil
 		}
+		fmt.Println()
 		for _, m := range manga {
 			chapters, _ := lib.GetChapters(m.ID)
-			fmt.Printf("[%s] %s — %d chapters in %s\n", m.ID, m.Title, len(chapters), m.OutputDir)
+			fmt.Printf("  📚  %s  %s\n",
+				bold(m.Title),
+				dim(fmt.Sprintf("— %d chapters  · %s", len(chapters), m.OutputDir)),
+			)
 		}
+		fmt.Println()
 		return nil
 	},
 }
