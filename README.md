@@ -92,10 +92,16 @@ tomu merge dd8a907a-... -c 1-27 -n "Vol.1"
 
 ### Update
 
-Download new chapters for all tracked manga:
+Download new chapters for a specific manga:
 
 ```
-tomu update
+tomu update dd8a907a-3850-4f95-ba03-ba201a8399e3
+```
+
+Update all tracked manga at once (3 concurrent):
+
+```
+tomu update --all
 ```
 
 ### List your library
@@ -135,3 +141,42 @@ Tomu currently only supports **[MangaDex](https://mangadex.org/)**.
 MangaDex is great for fan translations, but popular licensed titles regularly disappear after publisher takedowns. Chapters hosted on official platforms like Viz or MangaPlus can't be downloaded and will be skipped automatically.
 
 More sources are on the roadmap.
+
+---
+
+## Tasks
+
+Tasks are defined here for [xc](https://github.com/joerdav/xc) (`go install github.com/joerdav/xc/cmd/xc@latest`).
+
+### build
+
+Build the binary for the current platform.
+
+```
+go build -o tomu .
+```
+
+### build-windows
+
+Build the Windows binary.
+
+```
+go build -o tomu.exe .
+```
+
+### test
+
+Run all tests.
+
+```
+go test ./... -count=1
+```
+
+### clean
+
+Remove build artifacts.
+
+```
+go clean
+rm -f tomu tomu.exe
+```

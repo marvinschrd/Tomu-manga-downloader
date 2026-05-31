@@ -6,16 +6,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/fatih/color"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"mangatool/config"
 	"mangatool/core"
-	"mangatool/core/downloader"
+	"mangatool/core/engine"
 	"mangatool/core/library"
-	"mangatool/core/metadata"
 	"mangatool/core/sources/mangadex"
 )
 
@@ -102,78 +101,61 @@ var downloadCmd = &cobra.Command{
 		}
 
 		var downloaded, skipped int
-		total := len(chapters)
+		var mu sync.Mutex
+		var bar *progressbar.ProgressBar
 
-		for i, ch := range chapters {
-			cbzName := chapterFilename(manga.Title, ch)
-			cbzPath := filepath.Join(mangaDir, cbzName)
-			counter := dim(fmt.Sprintf("[%d/%d]", i+1, total))
-
-			if !force {
-				if exists, _ := lib.HasChapter(ch.ID); exists {
-					fmt.Printf("  %s %s  %s\n", yellow("⏭"), counter, dim(fmt.Sprintf("Ch.%v — already downloaded", ch.Number)))
-					skipped++
-					continue
-				}
-			}
-
-			fmt.Printf("  %s %s  Ch.%v\n", "📥", counter, ch.Number)
-			tmpDir, err := os.MkdirTemp("", "mangatool-*")
-			if err != nil {
-				return err
-			}
-
-			imageURLs, err := source.DownloadChapter(ch, tmpDir)
-			if err != nil {
-				os.RemoveAll(tmpDir)
-				fmt.Printf("  %s %s  Ch.%v — %s\n", red("⚠"), counter, ch.Number, dim(err.Error()))
-				skipped++
-				continue
-			}
-			if len(imageURLs) == 0 {
-				os.RemoveAll(tmpDir)
-				fmt.Printf("  %s %s  Ch.%v — %s\n", yellow("⏭"), counter, ch.Number, dim("hosted on official publisher site"))
-				skipped++
-				continue
-			}
-
-			bar := progressbar.NewOptions(len(imageURLs),
-				progressbar.OptionSetWidth(30),
-				progressbar.OptionSetDescription(fmt.Sprintf("      %s", dim("downloading pages"))),
-				progressbar.OptionClearOnFinish(),
-				progressbar.OptionSetWriter(os.Stderr),
-				progressbar.OptionShowCount(),
-			)
-
-			imagePaths, err := downloader.DownloadImages(imageURLs, tmpDir, func() { bar.Add(1) })
-			if err != nil {
-				bar.Clear()
-				os.RemoveAll(tmpDir)
-				return fmt.Errorf("Ch.%v images: %w", ch.Number, err)
-			}
-			bar.Clear()
-
-			ci, err := metadata.GenerateComicInfo(manga, ch, len(imagePaths))
-			if err != nil {
-				os.RemoveAll(tmpDir)
-				return err
-			}
-			if err := downloader.CreateCBZ(cbzPath, imagePaths, ci); err != nil {
-				os.RemoveAll(tmpDir)
-				return err
-			}
-			os.RemoveAll(tmpDir)
-
-			_ = lib.AddChapter(core.DownloadedChapter{
-				Chapter:      ch,
-				CBZPath:      cbzPath,
-				DownloadedAt: time.Now(),
-			})
-
-			size := fileSize(cbzPath)
-			fmt.Printf("  %s %s  Ch.%v saved  %s\n", green("✅"), counter, ch.Number, dim("· "+size))
-			downloaded++
+		job := engine.Job{
+			Manga: manga,
+			Options: engine.JobOptions{
+				OutputDir: mangaDir,
+				Language:  lang,
+				Force:     force,
+				Chapters:  chapters,
+			},
 		}
+
+		eng := &engine.Engine{Source: source, Lib: lib, Conc: 1}
+		eng.Run(cmd.Context(), []engine.Job{job}, func(evt engine.Event) {
+			mu.Lock()
+			defer mu.Unlock()
+			counter := dim(fmt.Sprintf("[%d/%d]", evt.ChapterIndex, evt.TotalChapters))
+			switch evt.Kind {
+			case engine.EvtChapterStarted:
+				fmt.Printf("  %s %s  Ch.%v\n", "📥", counter, evt.Chapter.Number)
+				bar = progressbar.NewOptions(evt.TotalImages,
+					progressbar.OptionSetWidth(30),
+					progressbar.OptionSetDescription(fmt.Sprintf("      %s", dim("downloading pages"))),
+					progressbar.OptionClearOnFinish(),
+					progressbar.OptionSetWriter(os.Stderr),
+					progressbar.OptionShowCount(),
+				)
+			case engine.EvtImageProgress:
+				if bar != nil {
+					bar.Add(1)
+				}
+			case engine.EvtChapterSaved:
+				if bar != nil {
+					bar.Clear()
+					bar = nil
+				}
+				size := fileSize(evt.CBZPath)
+				fmt.Printf("  %s %s  Ch.%v saved  %s\n", green("✅"), counter, evt.Chapter.Number, dim("· "+size))
+				downloaded++
+			case engine.EvtChapterSkipped:
+				fmt.Printf("  %s %s  %s\n", yellow("⏭"), counter, dim(fmt.Sprintf("Ch.%v — already downloaded", evt.Chapter.Number)))
+				skipped++
+			case engine.EvtChapterExternal:
+				fmt.Printf("  %s %s  %s\n", yellow("⏭"), counter, dim(fmt.Sprintf("Ch.%v — hosted on official publisher site", evt.Chapter.Number)))
+				skipped++
+			case engine.EvtChapterFailed:
+				if bar != nil {
+					bar.Clear()
+					bar = nil
+				}
+				fmt.Printf("  %s %s  Ch.%v — %s\n", red("⚠"), counter, evt.Chapter.Number, dim(evt.Err.Error()))
+				skipped++
+			}
+		})
 
 		fmt.Printf("\n%s\n", dim(strings.Repeat("─", 45)))
 		fmt.Printf("  📦  %s downloaded  %s skipped  %s\n",
@@ -226,23 +208,9 @@ func filterChapterRange(chapters []core.Chapter, rangeStr string) ([]core.Chapte
 	return out, nil
 }
 
-func chapterFilename(title string, ch core.Chapter) string {
-	if ch.Volume != "" {
-		return fmt.Sprintf("%s - Vol.%s - Ch.%s.cbz", sanitize(title), ch.Volume, formatNum(ch.Number))
-	}
-	return fmt.Sprintf("%s - Ch.%s.cbz", sanitize(title), formatNum(ch.Number))
-}
-
-func formatNum(n float64) string {
-	if n == float64(int(n)) {
-		return fmt.Sprintf("%d", int(n))
-	}
-	return strconv.FormatFloat(n, 'f', -1, 64)
-}
-
 func sanitize(s string) string {
-	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "", "?", "", `"`, "", "<", "", ">", "", "|", "")
-	return replacer.Replace(s)
+	r := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "", "?", "", `"`, "", "<", "", ">", "", "|", "")
+	return r.Replace(s)
 }
 
 func libraryPath() string {
